@@ -1,0 +1,6 @@
+{
+  "name": "EngineTrack Web Dashboard",
+  "description": "Running progression dashboard for Zone 2 Runs and Norwegian 4x4 Intervals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
