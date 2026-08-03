@@ -16,10 +16,138 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!-- Fonts are self-hosted (src/fonts.css) so the app renders correctly
          offline inside the iOS WebView, where Google Fonts is unreachable. -->
+
+    <!--
+      Boot styling, inlined deliberately.
+
+      Everything below must work when the external stylesheet does NOT load,
+      so it duplicates a few colours from src/index.css by hand rather than
+      importing anything. Without this, a failed asset load paints plain white
+      and the app looks like a dead page instead of a broken one.
+    -->
+    <style>
+      html, body {
+        margin: 0;
+        background: #020617;
+        color: #e2e8f0;
+        font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      #boot {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        padding: 32px 24px;
+        text-align: center;
+        box-sizing: border-box;
+      }
+      #boot-spinner {
+        width: 34px;
+        height: 34px;
+        border: 3px solid #1e293b;
+        border-top-color: #22d3ee;
+        border-radius: 50%;
+        animation: boot-spin 0.9s linear infinite;
+      }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+      #boot-title { font-size: 15px; font-weight: 700; color: #f1f5f9; }
+      #boot-detail {
+        font-size: 12px;
+        line-height: 1.6;
+        color: #94a3b8;
+        max-width: 34rem;
+      }
+      #boot-detail code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        color: #fda4af;
+        overflow-wrap: anywhere;
+      }
+      .boot-failed #boot-spinner { display: none; }
+    </style>
   </head>
-  <body class="bg-slate-900 text-slate-100 antialiased font-['Plus_Jakarta_Sans',sans-serif] selection:bg-cyan-500/30 selection:text-cyan-200">
-    <div id="root"></div>
+  <body>
+    <div id="root">
+      <!-- Replaced by React on mount. If the bundle never executes, the
+           watchdog below turns this into a readable diagnostic instead of
+           leaving a featureless screen. -->
+      <div id="boot">
+        <div id="boot-spinner"></div>
+        <div id="boot-title">Loading EngineTrack…</div>
+        <div id="boot-detail"></div>
+      </div>
+    </div>
+
+    <noscript>
+      <div style="padding:32px 24px;text-align:center;color:#e2e8f0">
+        <strong>JavaScript is required</strong><br />
+        EngineTrack analyses your workout data entirely in the browser, so it
+        cannot run with JavaScript disabled.
+      </div>
+    </noscript>
+
+    <script>
+      // Boot watchdog. Runs before the app bundle and captures anything that
+      // stops it starting, so a phone with no developer tools can still report
+      // what actually broke.
+      (function () {
+        var problems = [];
+
+        function note(text) {
+          if (text && problems.indexOf(text) === -1) problems.push(text);
+        }
+
+        // A failed script/stylesheet/font fires an error event that does not
+        // bubble, hence the capture phase.
+        window.addEventListener(
+          'error',
+          function (event) {
+            var el = event.target;
+            if (el && (el.src || el.href)) {
+              note('Could not load ' + (el.src || el.href));
+            } else if (event.message) {
+              note(event.message);
+            }
+          },
+          true
+        );
+
+        window.addEventListener('unhandledrejection', function (event) {
+          note(String((event.reason && event.reason.message) || event.reason));
+        });
+
+        setTimeout(function () {
+          var boot = document.getElementById('boot');
+          // React replaces #root's children on mount, so a surviving #boot
+          // means the app never started.
+          if (!boot || !boot.isConnected) return;
+
+          document.body.className = 'boot-failed';
+          document.getElementById('boot-title').textContent = 'EngineTrack could not start';
+
+          var detail = document.getElementById('boot-detail');
+          if (problems.length) {
+            detail.innerHTML =
+              'The app files did not load:<br /><code>' +
+              problems
+                .slice(0, 4)
+                .map(function (p) {
+                  return p.replace(/[<>&]/g, function (c) {
+                    return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c];
+                  });
+                })
+                .join('</code><br /><code>') +
+              '</code><br /><br />If this page was opened from a home screen icon, delete it and re-add it from Safari.';
+          } else {
+            detail.textContent =
+              'The page loaded but the application bundle never ran. Try a hard refresh; if it persists the deployment is serving the wrong files.';
+          }
+        }, 8000);
+      })();
+    </script>
+
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
