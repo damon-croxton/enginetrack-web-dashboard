@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { parseAppleHealthFile, ParsedAppleHealthData } from '../utils/appleHealthParser';
-import { syncDirectHealthKitData, isHealthKitSupported } from '../utils/healthKitSync';
+import { loadDemoWorkouts, isHealthKitSupported } from '../utils/healthKitSync';
 import { Zone2Run, Norwegian4x4Session } from '../types';
 import {
   X,
@@ -49,17 +49,17 @@ export const AppleHealthImportModal: React.FC<AppleHealthImportModalProps> = ({
     setErrorMessage(null);
     setIsParsing(true);
     setProgressPercent(10);
-    setStatusText('Handshaking with HealthKit API...');
+    setStatusText('Loading sample workouts...');
 
     try {
-      const result = await syncDirectHealthKitData((percent, text) => {
+      const result = await loadDemoWorkouts((percent, text) => {
         setProgressPercent(percent);
         setStatusText(text);
       });
       setParsedData(result);
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err.message || 'HealthKit sync failed.');
+      setErrorMessage(err.message || 'Failed to load sample workouts.');
     } finally {
       setIsParsing(false);
     }
@@ -158,7 +158,7 @@ export const AppleHealthImportModal: React.FC<AppleHealthImportModalProps> = ({
               }`}
             >
               <Smartphone className="h-4 w-4" />
-              <span>Direct HealthKit Sync (Expo / iOS)</span>
+              <span>{isNative ? 'Direct HealthKit Sync (iOS)' : 'Sample Data (Demo)'}</span>
             </button>
 
             <button
@@ -180,13 +180,27 @@ export const AppleHealthImportModal: React.FC<AppleHealthImportModalProps> = ({
 
           {/* Mode Guidance & Security Banner */}
           {sourceMode === 'healthKitApi' ? (
-            <div className="bg-cyan-950/40 border border-cyan-800/80 rounded-xl p-3.5 flex items-start gap-3">
-              <Zap className="h-5 w-5 text-cyan-400 shrink-0 mt-0.5" />
-              <div className="text-xs text-cyan-200/90 leading-relaxed">
-                <strong className="text-cyan-300 font-semibold block mb-0.5">Live Apple HealthKit Device Sync</strong>
-                Queries workouts, heart rate samples, resting HR, and max HR directly from your Apple Watch / iPhone Health database via native HealthKit framework.
+            isNative ? (
+              <div className="bg-cyan-950/40 border border-cyan-800/80 rounded-xl p-3.5 flex items-start gap-3">
+                <Zap className="h-5 w-5 text-cyan-400 shrink-0 mt-0.5" />
+                <div className="text-xs text-cyan-200/90 leading-relaxed">
+                  <strong className="text-cyan-300 font-semibold block mb-0.5">Live Apple HealthKit Device Sync</strong>
+                  Queries workouts, heart rate samples, resting HR, and max HR directly from your Apple Watch / iPhone Health database via native HealthKit framework.
+                </div>
               </div>
-            </div>
+            ) : (
+              /* No native bridge here, so this tab can only produce invented data.
+                 Say so plainly rather than describing a device sync that isn't happening. */
+              <div className="bg-amber-950/40 border border-amber-800/80 rounded-xl p-3.5 flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-200/90 leading-relaxed">
+                  <strong className="text-amber-300 font-semibold block mb-0.5">Sample data — not from your device</strong>
+                  HealthKit is unavailable in a browser, so this tab loads four invented
+                  workouts for testing the dashboard. The numbers are not yours. Use the
+                  file upload tab for your real Apple Health data.
+                </div>
+              </div>
+            )
           ) : (
             <div className="bg-emerald-950/40 border border-emerald-800/80 rounded-xl p-3.5 flex items-start gap-3">
               <HardDrive className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
@@ -222,11 +236,13 @@ export const AppleHealthImportModal: React.FC<AppleHealthImportModalProps> = ({
                     </div>
 
                     <div>
-                      <h4 className="text-base font-bold text-white">Apple HealthKit Native Bridge</h4>
+                      <h4 className="text-base font-bold text-white">
+                        {isNative ? 'Apple HealthKit Native Bridge' : 'Sample Workouts'}
+                      </h4>
                       <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
                         {isNative
                           ? 'One-tap sync to pull latest workouts, running paces, and heart rate samples directly into EngineTrack.'
-                          : 'Web browsers (Safari/Chrome) cannot access HealthKit directly due to iOS privacy rules. In browser preview mode, this button loads 4 sample workouts for testing.'}
+                          : 'Web browsers (Safari/Chrome) cannot access HealthKit directly due to iOS privacy rules. This button loads 4 invented workouts so you can exercise the dashboard.'}
                       </p>
                     </div>
 
@@ -254,8 +270,10 @@ export const AppleHealthImportModal: React.FC<AppleHealthImportModalProps> = ({
                         </div>
                       </div>
                       <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl space-y-1">
-                        <div className="text-[10px] font-bold text-slate-400 uppercase">Auto Physiology</div>
-                        <div className="text-xs font-bold text-cyan-300 font-mono">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase">
+                          {isNative ? 'Auto Physiology' : 'Sample Physiology'}
+                        </div>
+                        <div className={`text-xs font-bold font-mono ${isNative ? 'text-cyan-300' : 'text-amber-300'}`}>
                           Rest: 52 / Max: 188
                         </div>
                       </div>
@@ -350,6 +368,31 @@ export const AppleHealthImportModal: React.FC<AppleHealthImportModalProps> = ({
                   </span>
                 </div>
 
+                {/* Physiology baselines: state plainly whether these were detected
+                    or fell back to defaults, since HRR metrics depend on them. */}
+                <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <span className={`px-2 py-1 rounded-lg border font-mono ${
+                    parsedData.restingHRDetected
+                      ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300'
+                      : 'bg-slate-900 border-slate-700 text-slate-400'
+                  }`}>
+                    Resting HR: {parsedData.detectedRestingHR}
+                    <span className="ml-1 font-sans">
+                      {parsedData.restingHRDetected ? 'detected' : '(default — none found)'}
+                    </span>
+                  </span>
+                  <span className={`px-2 py-1 rounded-lg border font-mono ${
+                    parsedData.maxHRDetected
+                      ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300'
+                      : 'bg-slate-900 border-slate-700 text-slate-400'
+                  }`}>
+                    Max HR: {parsedData.detectedMaxHR}
+                    <span className="ml-1 font-sans">
+                      {parsedData.maxHRDetected ? 'detected' : '(default — none found)'}
+                    </span>
+                  </span>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                   <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1">
                     <div className="flex items-center gap-1.5 text-xs text-cyan-400 font-bold">
@@ -388,6 +431,21 @@ export const AppleHealthImportModal: React.FC<AppleHealthImportModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Deliberate exclusions - shown so a missing session is never a mystery */}
+              {parsedData.rejectedSessions > 0 && (
+                <div className="bg-amber-950/40 border border-amber-800/80 rounded-xl p-3.5 flex items-start gap-3">
+                  <Info className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
+                  <div className="text-xs text-amber-200/90 leading-relaxed">
+                    <strong className="text-amber-300 font-semibold block mb-0.5">
+                      {parsedData.rejectedSessions} interval session
+                      {parsedData.rejectedSessions === 1 ? '' : 's'} excluded
+                    </strong>
+                    No work bout fell within 3m55s–4m05s, so these were treated as
+                    malformed 4x4 attempts and left out of the dataset.
+                  </div>
+                </div>
+              )}
 
               {/* Replace Sample Data Option */}
               <label className="flex items-start gap-3 p-3.5 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer hover:border-cyan-500/50 transition-all group">

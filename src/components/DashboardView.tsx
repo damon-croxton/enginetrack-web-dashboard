@@ -354,7 +354,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div>
               <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-1.5 flex-wrap">
                 <span>All Runs Dataset (HRR Index)</span>
-                <span className="text-[10px] font-semibold px-2 py-0.2 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800">
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800">
                   All Historical Data
                 </span>
               </h3>
@@ -409,7 +409,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div>
               <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-1.5 flex-wrap">
                 <span>Zone 2 Aerobic Power Trend</span>
-                <span className="text-[10px] font-semibold px-2 py-0.2 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800">
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800">
                   2026 Data
                 </span>
               </h3>
@@ -473,7 +473,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div>
               <h3 className="text-sm sm:text-base font-bold text-white flex items-center gap-1.5 flex-wrap">
                 <span>Norwegian 4x4 Peak Interval Output</span>
-                <span className="text-[10px] font-semibold px-2 py-0.2 rounded-full bg-rose-950 text-rose-300 border border-rose-800">
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-800">
                   2026 Data
                 </span>
               </h3>

@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { Zone2Run, Norwegian4x4Session, IntervalSplit, MiscRun } from '../types';
+import { Zone2Run, Norwegian4x4Session, IntervalSplit, MiscRun, DataSource } from '../types';
 
 export interface ParsedAppleHealthData {
   zone2Runs: Zone2Run[];
@@ -10,7 +10,21 @@ export interface ParsedAppleHealthData {
   isCdaFile?: boolean;
   detectedRestingHR?: number;
   detectedMaxHR?: number;
+  /** Interval sessions excluded because no work bout landed in the 3m55s-4m05s window. */
+  rejectedSessions: number;
+  /** True when resting HR came from Health records rather than the fallback default. */
+  restingHRDetected: boolean;
+  /** True when max HR came from workout maxima rather than the fallback default. */
+  maxHRDetected: boolean;
+  /** Origin of this dataset. 'demo' means the figures are invented. */
+  source: DataSource;
 }
+
+/** Apple Health record type carrying the daily resting heart rate figure. */
+const RESTING_HR_TYPE = 'HKQuantityTypeIdentifierRestingHeartRate';
+
+/** Only average resting HR over recent samples so it tracks current fitness. */
+const RESTING_HR_WINDOW_DAYS = 90;
 
 const TARGET_4X4_DATES = new Set([
   '2026-03-14', '2026-03-19', '2026-03-28', '2026-04-09',
@@ -35,6 +49,10 @@ export async function parseAppleHealthFile(
       totalWorkoutsFound: 0,
       runningWorkoutsFound: 0,
       isCdaFile: true,
+      rejectedSessions: 0,
+      restingHRDetected: false,
+      maxHRDetected: false,
+      source: 'export',
     };
   }
 
@@ -42,8 +60,11 @@ export async function parseAppleHealthFile(
   const norwegianSessions: Norwegian4x4Session[] = [];
   const miscRuns: MiscRun[] = [];
   let runningWorkoutsFound = 0;
-  const restingHRSamples: number[] = [];
+  let rejectedSessions = 0;
+  const restingHRSamples: { dateMs: number; value: number }[] = [];
   let observedMaxHR = 0;
+  // Peak HR taken from WorkoutStatistics maxima - a true max, unlike averages.
+  let observedPeakHR = 0;
 
   onProgress?.(5, 'Opening Apple Health stream...');
 
@@ -118,19 +139,24 @@ export async function parseAppleHealthFile(
       const workoutStart = buffer.indexOf('<Workout');
 
       if (workoutStart === -1) {
+        // No workout here, but this region still holds <Record> elements we need
+        // (resting HR). Harvest them before the text is thrown away.
+        const consumed = harvestRecords(buffer);
         if (isEnd) {
           buffer = '';
         } else {
-          // Discard all processed non-workout content, keeping last 20 chars for tag split boundary
-          if (buffer.length > 20) {
-            buffer = buffer.slice(-20);
-          }
+          // Retain from whichever comes first: an incomplete <Record we haven't
+          // parsed yet, or a 20-char tail so a '<Workout' split across chunk
+          // boundaries isn't lost.
+          const keepFrom = Math.min(consumed, Math.max(0, buffer.length - 20));
+          buffer = buffer.slice(keepFrom);
         }
         break;
       }
 
-      // Immediately discard non-workout text preceding '<Workout'
+      // Text preceding '<Workout' is complete; harvest records, then discard it.
       if (workoutStart > 0) {
+        harvestRecords(buffer.slice(0, workoutStart));
         buffer = buffer.slice(workoutStart);
       }
 
@@ -163,6 +189,58 @@ export async function parseAppleHealthFile(
 
       // Immediately remove parsed workout block from buffer
       buffer = buffer.slice(workoutEnd);
+    }
+  }
+
+  /**
+   * Scans a region of the stream for standalone <Record> elements we care about
+   * (currently resting heart rate) before that region is discarded.
+   *
+   * Only the opening tag is needed - every attribute we read lives there - so a
+   * record is "complete" as soon as its first '>' is in the buffer, regardless
+   * of any MetadataEntry children that follow.
+   *
+   * Returns the index up to which text was fully consumed. Anything at or after
+   * that index is an incomplete tag the caller must retain for the next chunk.
+   */
+  function harvestRecords(text: string): number {
+    let pos = 0;
+
+    while (true) {
+      const recordStart = text.indexOf('<Record', pos);
+      if (recordStart === -1) return text.length;
+
+      const tagEnd = text.indexOf('>', recordStart);
+      if (tagEnd === -1) {
+        // Opening tag straddles a chunk boundary - retain it for the next pass.
+        return recordStart;
+      }
+
+      const tag = text.slice(recordStart, tagEnd + 1);
+
+      if (tag.includes(RESTING_HR_TYPE)) {
+        const valueMatch = /value=["']([^"']+)["']/i.exec(tag);
+        const dateMatch = /startDate=["']([^"']+)["']/i.exec(tag);
+
+        if (valueMatch) {
+          const value = parseFloat(valueMatch[1]);
+          // Apple emits "YYYY-MM-DD HH:MM:SS +ZZZZ", which Date cannot parse as
+          // a whole. Day granularity is ample for a 90-day window, so take the
+          // leading date portion only.
+          const dateMs = dateMatch
+            ? new Date(dateMatch[1].slice(0, 10)).getTime()
+            : NaN;
+
+          if (Number.isFinite(value) && value > 0) {
+            restingHRSamples.push({
+              dateMs: Number.isFinite(dateMs) ? dateMs : 0,
+              value,
+            });
+          }
+        }
+      }
+
+      pos = tagEnd + 1;
     }
   }
 
@@ -220,6 +298,20 @@ export async function parseAppleHealthFile(
       const metaHrMatch = /<MetadataEntry\s+[^>]*key=["']HKAverageHeartRate["'][^>]*value=["']([^"']+)["']/i.exec(xml);
       if (metaHrMatch) {
         avgHR = parseFloat(metaHrMatch[1]);
+      }
+    }
+
+    // True peak HR for this workout. Averages systematically understate max HR,
+    // which skews every HRR-based metric downstream.
+    const hrMaxMatch = /<WorkoutStatistics\s+[^>]*type=["'][^"']*HeartRate["'][^>]*maximum=["']([^"']+)["']/i.exec(xml);
+    if (hrMaxMatch) {
+      const peak = parseFloat(hrMaxMatch[1]);
+      if (Number.isFinite(peak) && peak > observedPeakHR) observedPeakHR = peak;
+    } else {
+      const metaMaxMatch = /<MetadataEntry\s+[^>]*key=["']HKMaximumHeartRate["'][^>]*value=["']([^"']+)["']/i.exec(xml);
+      if (metaMaxMatch) {
+        const peak = parseFloat(metaMaxMatch[1]);
+        if (Number.isFinite(peak) && peak > observedPeakHR) observedPeakHR = peak;
       }
     }
 
@@ -325,6 +417,7 @@ export async function parseAppleHealthFile(
         const avgWorkSpeed = totalWorkSec > 0 ? totalWorkDist / (totalWorkSec / 3600) : 0;
 
         norwegianSessions.push({
+          Source: 'export',
           Date_Str: dateFormatted,
           Total_Work_Intervals: splits.length,
           Avg_Speed_kmh: Number(avgWorkSpeed.toFixed(1)),
@@ -336,6 +429,11 @@ export async function parseAppleHealthFile(
         });
 
         runningWorkoutsFound++;
+      } else {
+        // Interval session with no bout in the 3m55s-4m05s window. Excluding it
+        // is intentional (the workout went wrong), but count it so the import
+        // summary doesn't quietly under-report.
+        rejectedSessions++;
       }
     } else {
       // Steady/General Runs
@@ -349,6 +447,7 @@ export async function parseAppleHealthFile(
 
         if (isZone2) {
           zone2Runs.push({
+            Source: 'export',
             Date_Str: dateFormatted,
             Total_Distance_km: Number(totalDistKm.toFixed(1)),
             Duration_min: Number(durationMin.toFixed(1)),
@@ -369,6 +468,7 @@ export async function parseAppleHealthFile(
           }
 
           miscRuns.push({
+            Source: 'export',
             Date_Str: dateFormatted,
             Total_Distance_km: Number(totalDistKm.toFixed(1)),
             Duration_min: Number(durationMin.toFixed(1)),
@@ -389,21 +489,41 @@ export async function parseAppleHealthFile(
   norwegianSessions.sort((a, b) => new Date(a.Date_Str).getTime() - new Date(b.Date_Str).getTime());
   miscRuns.sort((a, b) => new Date(a.Date_Str).getTime() - new Date(b.Date_Str).getTime());
 
-  // Calculate detected max HR across workouts
-  [...zone2Runs, ...miscRuns].forEach((r) => {
-    if (r.Avg_HR > observedMaxHR) observedMaxHR = r.Avg_HR;
-  });
-  norwegianSessions.forEach((s) => {
-    if (s.Peak_Interval_HR > observedMaxHR) observedMaxHR = s.Peak_Interval_HR;
-    else if (s.Avg_Work_HR > observedMaxHR) observedMaxHR = s.Avg_Work_HR;
-  });
+  // Prefer true workout maxima; fall back to per-run averages only when no
+  // WorkoutStatistics maximum was present anywhere in the export.
+  observedMaxHR = observedPeakHR;
+  if (observedMaxHR <= 0) {
+    [...zone2Runs, ...miscRuns].forEach((r) => {
+      if (r.Avg_HR > observedMaxHR) observedMaxHR = r.Avg_HR;
+    });
+    norwegianSessions.forEach((s) => {
+      if (s.Peak_Interval_HR > observedMaxHR) observedMaxHR = s.Peak_Interval_HR;
+      else if (s.Avg_Work_HR > observedMaxHR) observedMaxHR = s.Avg_Work_HR;
+    });
+  }
 
-  const detectedRestingHR = restingHRSamples.length > 0
-    ? Math.round(restingHRSamples.reduce((a, b) => a + b, 0) / restingHRSamples.length)
+  // Average resting HR over the trailing window so it reflects current fitness
+  // rather than a multi-year mean.
+  let recentResting = restingHRSamples;
+  if (restingHRSamples.length > 0) {
+    const newestMs = Math.max(...restingHRSamples.map((s) => s.dateMs));
+    const windowStart = newestMs - RESTING_HR_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    const windowed = restingHRSamples.filter((s) => s.dateMs >= windowStart);
+    if (windowed.length > 0) recentResting = windowed;
+  }
+
+  const restingHRDetected = recentResting.length > 0;
+  const detectedRestingHR = restingHRDetected
+    ? Math.round(recentResting.reduce((a, b) => a + b.value, 0) / recentResting.length)
     : 52;
-  const detectedMaxHR = observedMaxHR > 150 ? Math.round(observedMaxHR) : 188;
 
-  onProgress?.(100, `Done! Extracted ${runningWorkoutsFound} running workouts matching your exact Python pipeline.`);
+  const maxHRDetected = observedMaxHR > 150;
+  const detectedMaxHR = maxHRDetected ? Math.round(observedMaxHR) : 188;
+
+  const summary = rejectedSessions > 0
+    ? `Done! Extracted ${runningWorkoutsFound} running workouts (${rejectedSessions} interval session${rejectedSessions === 1 ? '' : 's'} excluded).`
+    : `Done! Extracted ${runningWorkoutsFound} running workouts.`;
+  onProgress?.(100, summary);
 
   return {
     zone2Runs,
@@ -411,7 +531,11 @@ export async function parseAppleHealthFile(
     miscRuns,
     totalWorkoutsFound: runningWorkoutsFound,
     runningWorkoutsFound,
+    rejectedSessions,
     detectedRestingHR,
     detectedMaxHR,
+    restingHRDetected,
+    maxHRDetected,
+    source: 'export',
   };
 }

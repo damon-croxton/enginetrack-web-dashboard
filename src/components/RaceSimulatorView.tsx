@@ -149,7 +149,7 @@ export const RaceSimulatorView: React.FC<RaceSimulatorViewProps> = ({
           <div>
             <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-1.5 flex-wrap">
               <span>Race Pace & Performance Simulator</span>
-              <span className="text-[10px] bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.2 rounded-full font-semibold">
+              <span className="text-[10px] bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-full font-semibold">
                 Riegel Model
               </span>
             </h2>

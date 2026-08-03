@@ -192,7 +192,7 @@ export const MiscRunsView: React.FC<MiscRunsViewProps> = ({
           <div>
             <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-1.5 flex-wrap">
               <span>General & Non-Zone 2 Running Analysis</span>
-              <span className="text-[10px] bg-purple-950 text-purple-300 border border-purple-800 px-2 py-0.2 rounded-full font-semibold">
+              <span className="text-[10px] bg-purple-950 text-purple-300 border border-purple-800 px-2 py-0.5 rounded-full font-semibold">
                 Split by Type
               </span>
             </h2>

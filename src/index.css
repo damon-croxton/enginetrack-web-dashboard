@@ -1,1 +1,20 @@
 @import "tailwindcss";
+
+@theme {
+  /* Extra-small breakpoint used by the header's collapsible button labels. */
+  --breakpoint-xs: 24rem;
+
+  /* Intermediate slate step used by modal headers. */
+  --color-slate-850: oklch(0.235 0.035 256.8);
+}
+
+/* Hides the native scrollbar on horizontally scrollable strips (tab nav,
+   dashboard milestone ribbon) while keeping them scrollable by touch/wheel. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

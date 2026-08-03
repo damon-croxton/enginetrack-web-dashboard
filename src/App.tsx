@@ -15,6 +15,29 @@ import { AppleHealthImportModal } from './components/AppleHealthImportModal';
 import { ParsedAppleHealthData } from './utils/appleHealthParser';
 import { DEFAULT_PHYSIOLOGY } from './utils/cardioMetrics';
 
+/** Distance and duration separate two runs logged on the same date. */
+const runIdentity = (r: { Date_Str: string; Duration_min: number; Total_Distance_km: number }) =>
+  `${r.Date_Str}|${r.Duration_min}|${r.Total_Distance_km}`;
+
+const sessionIdentity = (s: Norwegian4x4Session) =>
+  `${s.Date_Str}|${s.Total_Work_Intervals}|${s.Total_Work_Distance_km}`;
+
+/**
+ * Replaces prior entries that the import supersedes, keeps the rest, and returns
+ * the union sorted chronologically.
+ */
+function mergeByIdentity<T extends { Date_Str: string }>(
+  previous: T[],
+  incoming: T[],
+  identity: (item: T) => string
+): T[] {
+  const incomingKeys = new Set(incoming.map(identity));
+  const retained = previous.filter((item) => !incomingKeys.has(identity(item)));
+  return [...retained, ...incoming].sort(
+    (a, b) => new Date(a.Date_Str).getTime() - new Date(b.Date_Str).getTime()
+  );
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [timeRange, setTimeRange] = useState<TimeRangeOption>('all');
@@ -197,28 +220,13 @@ export default function App() {
       setNorwegianSessions(parsed.norwegianSessions);
       setMiscRuns(parsed.miscRuns || []);
     } else {
-      // Merge and deduplicate by Date_Str
-      setZone2Runs((prev) => {
-        const newDates = new Set(parsed.zone2Runs.map((r) => r.Date_Str));
-        const filteredPrev = prev.filter((r) => !newDates.has(r.Date_Str));
-        return [...filteredPrev, ...parsed.zone2Runs].sort(
-          (a, b) => new Date(a.Date_Str).getTime() - new Date(b.Date_Str).getTime()
-        );
-      });
-      setNorwegianSessions((prev) => {
-        const newDates = new Set(parsed.norwegianSessions.map((s) => s.Date_Str));
-        const filteredPrev = prev.filter((s) => !newDates.has(s.Date_Str));
-        return [...filteredPrev, ...parsed.norwegianSessions].sort(
-          (a, b) => new Date(a.Date_Str).getTime() - new Date(b.Date_Str).getTime()
-        );
-      });
-      setMiscRuns((prev) => {
-        const newDates = new Set((parsed.miscRuns || []).map((m) => m.Date_Str));
-        const filteredPrev = prev.filter((m) => !newDates.has(m.Date_Str));
-        return [...filteredPrev, ...(parsed.miscRuns || [])].sort(
-          (a, b) => new Date(a.Date_Str).getTime() - new Date(b.Date_Str).getTime()
-        );
-      });
+      // Merge, replacing only genuine duplicates. Keying on Date_Str alone would
+      // collapse two runs done on the same day into one.
+      setZone2Runs((prev) => mergeByIdentity(prev, parsed.zone2Runs, runIdentity));
+      setNorwegianSessions((prev) =>
+        mergeByIdentity(prev, parsed.norwegianSessions, sessionIdentity)
+      );
+      setMiscRuns((prev) => mergeByIdentity(prev, parsed.miscRuns || [], runIdentity));
     }
   };
 

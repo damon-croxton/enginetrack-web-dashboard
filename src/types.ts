@@ -1,4 +1,8 @@
+/** Where a record came from, so sample data is never mistaken for real data. */
+export type DataSource = 'demo' | 'healthkit' | 'export';
+
 export type Zone2Run = {
+  Source?: DataSource;
   Date_Str: string;              // "YYYY-MM-DD"
   Total_Distance_km: number;
   Duration_min: number;
@@ -17,6 +21,7 @@ export type IntervalSplit = {
 };
 
 export type Norwegian4x4Session = {
+  Source?: DataSource;
   Date_Str: string;
   Total_Work_Intervals: number;  // e.g. 4
   Avg_Speed_kmh: number;
@@ -28,6 +33,7 @@ export type Norwegian4x4Session = {
 };
 
 export type MiscRun = {
+  Source?: DataSource;
   Date_Str: string;
   Total_Distance_km: number;
   Duration_min: number;

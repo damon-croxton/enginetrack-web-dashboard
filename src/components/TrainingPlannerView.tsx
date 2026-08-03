@@ -233,7 +233,7 @@ export const TrainingPlannerView: React.FC<TrainingPlannerViewProps> = ({
           <div>
             <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-1.5 flex-wrap">
               <span>Historical Volume & Targets</span>
-              <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.2 rounded-full font-semibold">
+              <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full font-semibold">
                 Monthly Timeline
               </span>
             </h2>

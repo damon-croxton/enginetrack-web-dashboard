@@ -60,7 +60,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <h1 className="text-xs sm:text-base font-extrabold tracking-tight text-white flex items-center gap-1">
               <span>EngineTrack</span>
-              <span className="text-[9px] sm:text-[10px] font-bold text-cyan-400 bg-cyan-950/80 px-1 py-0.2 rounded border border-cyan-800/80">
+              <span className="text-[9px] sm:text-[10px] font-bold text-cyan-400 bg-cyan-950/80 px-1 py-0.5 rounded border border-cyan-800/80">
                 v2.5
               </span>
             </h1>
