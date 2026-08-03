@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { AlertTriangle, X } from 'lucide-react';
 import { Zone2Run, Norwegian4x4Session, MiscRun, TabType, TimeRangeOption } from './types';
 import { INITIAL_ZONE2_DATA, INITIAL_NORWEGIAN4X4_DATA, INITIAL_MISC_RUNS_DATA } from './data/mockData';
 import { Header } from './components/Header';
@@ -14,6 +15,17 @@ import { MetricInfoModal } from './components/MetricInfoModal';
 import { AppleHealthImportModal } from './components/AppleHealthImportModal';
 import { ParsedAppleHealthData } from './utils/appleHealthParser';
 import { DEFAULT_PHYSIOLOGY } from './utils/cardioMetrics';
+import {
+  STORAGE_KEYS,
+  StorageFailure,
+  readJSON,
+  readNumber,
+  readString,
+  requestPersistentStorage,
+  writeJSON,
+  writeValue,
+} from './utils/storage';
+import { downloadBackup, readBackupFile } from './utils/backup';
 
 /** Distance and duration separate two runs logged on the same date. */
 const runIdentity = (r: { Date_Str: string; Duration_min: number; Total_Distance_km: number }) =>
@@ -45,107 +57,63 @@ export default function App() {
   const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
   const [isAppleHealthModalOpen, setIsAppleHealthModalOpen] = useState(false);
 
-  // Resting HR & Max HR baselines
-  const [restingHR, setRestingHR] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('enginetrack_resting_hr');
-      return saved ? Number(saved) : DEFAULT_PHYSIOLOGY.restingHR;
-    } catch (e) {
-      return DEFAULT_PHYSIOLOGY.restingHR;
-    }
-  });
+  // Surfaced to the user when a write is dropped. Silently losing an import is
+  // the worst outcome here, since this device is the only copy of the data.
+  const [storageError, setStorageError] = useState<StorageFailure | null>(null);
 
-  const [maxHR, setMaxHR] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('enginetrack_max_hr');
-      return saved ? Number(saved) : DEFAULT_PHYSIOLOGY.maxHR;
-    } catch (e) {
-      return DEFAULT_PHYSIOLOGY.maxHR;
-    }
-  });
+  // Ask the browser not to evict us. Best effort; see utils/storage.ts.
+  useEffect(() => {
+    requestPersistentStorage();
+  }, []);
+
+  // Resting HR & Max HR baselines
+  const [restingHR, setRestingHR] = useState<number>(() =>
+    readNumber(STORAGE_KEYS.restingHR, DEFAULT_PHYSIOLOGY.restingHR)
+  );
+
+  const [maxHR, setMaxHR] = useState<number>(() =>
+    readNumber(STORAGE_KEYS.maxHR, DEFAULT_PHYSIOLOGY.maxHR)
+  );
 
   useEffect(() => {
-    try {
-      localStorage.setItem('enginetrack_resting_hr', String(restingHR));
-    } catch (e) {
-      console.error(e);
-    }
+    setStorageError(writeValue(STORAGE_KEYS.restingHR, String(restingHR)));
   }, [restingHR]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('enginetrack_max_hr', String(maxHR));
-    } catch (e) {
-      console.error(e);
-    }
+    setStorageError(writeValue(STORAGE_KEYS.maxHR, String(maxHR)));
   }, [maxHR]);
 
   // Persistence in localStorage
-  const [zone2Runs, setZone2Runs] = useState<Zone2Run[]>(() => {
-    try {
-      const saved = localStorage.getItem('enginetrack_zone2_runs');
-      return saved ? JSON.parse(saved) : INITIAL_ZONE2_DATA;
-    } catch (e) {
-      return INITIAL_ZONE2_DATA;
-    }
-  });
+  const [zone2Runs, setZone2Runs] = useState<Zone2Run[]>(() =>
+    readJSON(STORAGE_KEYS.zone2Runs, INITIAL_ZONE2_DATA)
+  );
 
-  const [norwegianSessions, setNorwegianSessions] = useState<Norwegian4x4Session[]>(() => {
-    try {
-      const saved = localStorage.getItem('enginetrack_4x4_sessions');
-      return saved ? JSON.parse(saved) : INITIAL_NORWEGIAN4X4_DATA;
-    } catch (e) {
-      return INITIAL_NORWEGIAN4X4_DATA;
-    }
-  });
+  const [norwegianSessions, setNorwegianSessions] = useState<Norwegian4x4Session[]>(() =>
+    readJSON(STORAGE_KEYS.norwegianSessions, INITIAL_NORWEGIAN4X4_DATA)
+  );
 
-  const [miscRuns, setMiscRuns] = useState<MiscRun[]>(() => {
-    try {
-      const saved = localStorage.getItem('enginetrack_misc_runs');
-      return saved ? JSON.parse(saved) : INITIAL_MISC_RUNS_DATA;
-    } catch (e) {
-      return INITIAL_MISC_RUNS_DATA;
-    }
-  });
+  const [miscRuns, setMiscRuns] = useState<MiscRun[]>(() =>
+    readJSON(STORAGE_KEYS.miscRuns, INITIAL_MISC_RUNS_DATA)
+  );
 
   useEffect(() => {
-    try {
-      localStorage.setItem('enginetrack_zone2_runs', JSON.stringify(zone2Runs));
-    } catch (e) {
-      console.error(e);
-    }
+    setStorageError(writeJSON(STORAGE_KEYS.zone2Runs, zone2Runs));
   }, [zone2Runs]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('enginetrack_4x4_sessions', JSON.stringify(norwegianSessions));
-    } catch (e) {
-      console.error(e);
-    }
+    setStorageError(writeJSON(STORAGE_KEYS.norwegianSessions, norwegianSessions));
   }, [norwegianSessions]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('enginetrack_misc_runs', JSON.stringify(miscRuns));
-    } catch (e) {
-      console.error(e);
-    }
+    setStorageError(writeJSON(STORAGE_KEYS.miscRuns, miscRuns));
   }, [miscRuns]);
 
-  const [startYearCutoff, setStartYearCutoff] = useState<string>(() => {
-    try {
-      return localStorage.getItem('enginetrack_cutoff_year') || 'all';
-    } catch (e) {
-      return 'all';
-    }
-  });
+  const [startYearCutoff, setStartYearCutoff] = useState<string>(() =>
+    readString(STORAGE_KEYS.cutoffYear, 'all')
+  );
 
   useEffect(() => {
-    try {
-      localStorage.setItem('enginetrack_cutoff_year', startYearCutoff);
-    } catch (e) {
-      console.error(e);
-    }
+    setStorageError(writeValue(STORAGE_KEYS.cutoffYear, startYearCutoff));
   }, [startYearCutoff]);
 
   // Compute list of years available in dataset
@@ -230,27 +198,22 @@ export default function App() {
     }
   };
 
+  // The state effects above own persistence, so these only set state.
   const handleResetData = () => {
     setZone2Runs(INITIAL_ZONE2_DATA);
     setNorwegianSessions(INITIAL_NORWEGIAN4X4_DATA);
     setMiscRuns(INITIAL_MISC_RUNS_DATA);
-    try {
-      localStorage.setItem('enginetrack_zone2_runs', JSON.stringify(INITIAL_ZONE2_DATA));
-      localStorage.setItem('enginetrack_4x4_sessions', JSON.stringify(INITIAL_NORWEGIAN4X4_DATA));
-      localStorage.setItem('enginetrack_misc_runs', JSON.stringify(INITIAL_MISC_RUNS_DATA));
-    } catch (e) {
-      console.error(e);
-    }
   };
 
+  const totalWorkouts = zone2Runs.length + norwegianSessions.length + miscRuns.length;
+
   const handleClearData = () => {
-    // Destructive and irreversible: on a phone this button sits a thumb's width
-    // from "Load Demo Data", so require an explicit confirmation.
-    const total = zone2Runs.length + norwegianSessions.length + miscRuns.length;
-    if (total > 0) {
+    // Destructive and irreversible, and this device is the only copy — so point
+    // at the backup before wiping.
+    if (totalWorkouts > 0) {
       const confirmed = window.confirm(
-        `Delete all ${total} logged workout${total === 1 ? '' : 's'}?\n\n` +
-          'This clears your imported Apple Health data from this device and cannot be undone.'
+        `Delete all ${totalWorkouts} logged workout${totalWorkouts === 1 ? '' : 's'}?\n\n` +
+          'This cannot be undone. If you have not exported a backup, cancel and do that first.'
       );
       if (!confirmed) return;
     }
@@ -258,12 +221,31 @@ export default function App() {
     setZone2Runs([]);
     setNorwegianSessions([]);
     setMiscRuns([]);
+  };
+
+  const handleExportBackup = () => {
+    downloadBackup({ restingHR, maxHR, zone2Runs, norwegianSessions, miscRuns });
+  };
+
+  const handleImportBackup = async (file: File) => {
     try {
-      localStorage.setItem('enginetrack_zone2_runs', JSON.stringify([]));
-      localStorage.setItem('enginetrack_4x4_sessions', JSON.stringify([]));
-      localStorage.setItem('enginetrack_misc_runs', JSON.stringify([]));
-    } catch (e) {
-      console.error(e);
+      const backup = await readBackupFile(file);
+
+      setRestingHR(backup.restingHR);
+      setMaxHR(backup.maxHR);
+      // Merge rather than replace, so restoring an older backup alongside newer
+      // workouts doesn't discard them.
+      setZone2Runs((prev) => mergeByIdentity(prev, backup.zone2Runs, runIdentity));
+      setNorwegianSessions((prev) =>
+        mergeByIdentity(prev, backup.norwegianSessions, sessionIdentity)
+      );
+      setMiscRuns((prev) => mergeByIdentity(prev, backup.miscRuns, runIdentity));
+
+      const restored =
+        backup.zone2Runs.length + backup.norwegianSessions.length + backup.miscRuns.length;
+      window.alert(`Restored ${restored} workout${restored === 1 ? '' : 's'} from backup.`);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Could not read that backup file.');
     }
   };
 
@@ -283,7 +265,35 @@ export default function App() {
         onOpenAppleHealthModal={() => setIsAppleHealthModalOpen(true)}
         onResetData={handleResetData}
         onClearData={handleClearData}
+        onExportBackup={handleExportBackup}
+        onImportBackup={handleImportBackup}
       />
+
+      {/* A dropped write means the data is gone on next launch. Say so while the
+          user can still export it. */}
+      {storageError && (
+        <div className="bg-rose-950/80 border-b border-rose-800 px-4 py-3">
+          <div className="max-w-7xl mx-auto flex items-start gap-3">
+            <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+            <div className="flex-1 text-xs text-rose-200 leading-relaxed">
+              {storageError.message}
+            </div>
+            <button
+              onClick={handleExportBackup}
+              className="shrink-0 px-3 py-1.5 rounded-lg bg-rose-900 hover:bg-rose-800 border border-rose-700 text-rose-100 text-[11px] font-bold transition-colors"
+            >
+              Export Backup
+            </button>
+            <button
+              onClick={() => setStorageError(null)}
+              aria-label="Dismiss"
+              className="shrink-0 p-1.5 rounded-lg text-rose-300 hover:bg-rose-900/60 transition-colors"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-2 sm:px-6 lg:px-8 py-2.5 sm:py-6">

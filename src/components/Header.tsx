@@ -15,7 +15,9 @@ import {
   Target,
   Gauge,
   Layers,
-  MoreVertical
+  MoreVertical,
+  Download,
+  Upload
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -31,6 +33,8 @@ interface HeaderProps {
   onOpenAppleHealthModal: () => void;
   onResetData: () => void;
   onClearData: () => void;
+  onExportBackup: () => void;
+  onImportBackup: (file: File) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -46,9 +50,12 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAppleHealthModal,
   onResetData,
   onClearData,
+  onExportBackup,
+  onImportBackup,
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
 
   // Dismiss the overflow menu on outside tap or Escape.
   useEffect(() => {
@@ -139,6 +146,26 @@ export const Header: React.FC<HeaderProps> = ({
                     <span>Metric Methodology</span>
                   </button>
 
+                  {/* This device is the only copy of the data, so backup sits
+                      directly above the destructive action. */}
+                  <button
+                    role="menuitem"
+                    onClick={() => { setIsMenuOpen(false); onExportBackup(); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 text-xs font-semibold text-slate-200 hover:bg-slate-800 transition-colors text-left border-t border-slate-800"
+                  >
+                    <Download className="h-4 w-4 text-emerald-400 shrink-0" />
+                    <span>Export Backup</span>
+                  </button>
+
+                  <button
+                    role="menuitem"
+                    onClick={() => { setIsMenuOpen(false); restoreInputRef.current?.click(); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 text-xs font-semibold text-slate-200 hover:bg-slate-800 transition-colors text-left border-t border-slate-800"
+                  >
+                    <Upload className="h-4 w-4 text-emerald-400 shrink-0" />
+                    <span>Restore Backup</span>
+                  </button>
+
                   <button
                     role="menuitem"
                     onClick={() => { setIsMenuOpen(false); onResetData(); }}
@@ -158,6 +185,19 @@ export const Header: React.FC<HeaderProps> = ({
                   </button>
                 </div>
               )}
+
+              <input
+                ref={restoreInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onImportBackup(file);
+                  // Reset so re-picking the same file fires change again.
+                  e.target.value = '';
+                }}
+              />
             </div>
           </div>
         </div>
