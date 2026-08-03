@@ -16,6 +16,7 @@ import {
   Filter,
   History
 } from 'lucide-react';
+import { EmptyState } from './EmptyState';
 import {
   ResponsiveContainer,
   BarChart,
@@ -32,6 +33,8 @@ interface TrainingPlannerViewProps {
   norwegianSessions: Norwegian4x4Session[];
   miscRuns?: MiscRun[];
   startYearCutoff?: string;
+  onOpenAppleHealthModal?: () => void;
+  onResetData?: () => void;
 }
 
 export const TrainingPlannerView: React.FC<TrainingPlannerViewProps> = ({
@@ -39,7 +42,11 @@ export const TrainingPlannerView: React.FC<TrainingPlannerViewProps> = ({
   norwegianSessions,
   miscRuns = [],
   startYearCutoff = 'all',
+  onOpenAppleHealthModal,
+  onResetData,
 }) => {
+  const hasData = zone2Runs.length > 0 || norwegianSessions.length > 0 || miscRuns.length > 0;
+
   // Weekly Target State
   const [targetWeeklyZ2Km, setTargetWeeklyZ2Km] = useState<number>(25);
   const [targetWeekly4x4Count, setTargetWeekly4x4Count] = useState<number>(1);
@@ -221,6 +228,19 @@ export const TrainingPlannerView: React.FC<TrainingPlannerViewProps> = ({
   );
 
   const is80_20Polarized = currentMonthData ? currentMonthData.z2Pct >= 70 && currentMonthData.z2Pct <= 85 : true;
+
+  if (!hasData) {
+    return (
+      <EmptyState
+        icon={Target}
+        title="No Training History"
+        message="Monthly volume and consistency trends need logged sessions. Import your Apple Health data or load the demo dataset to see your history."
+        accent="emerald"
+        onOpenAppleHealthModal={onOpenAppleHealthModal}
+        onResetData={onResetData}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">

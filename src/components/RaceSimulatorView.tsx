@@ -15,18 +15,27 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { estimateVO2Max } from '../utils/cardioMetrics';
+import { EmptyState } from './EmptyState';
 
 interface RaceSimulatorViewProps {
   zone2Runs: Zone2Run[];
   norwegianSessions: Norwegian4x4Session[];
   miscRuns?: MiscRun[];
+  onOpenAppleHealthModal?: () => void;
+  onResetData?: () => void;
 }
 
 export const RaceSimulatorView: React.FC<RaceSimulatorViewProps> = ({
   zone2Runs,
   norwegianSessions,
   miscRuns = [],
+  onOpenAppleHealthModal,
+  onResetData,
 }) => {
+  // Without runs the baselines below fall back to placeholder speeds, which
+  // would render a confident race prediction built from nothing.
+  const hasData = zone2Runs.length > 0 || norwegianSessions.length > 0 || miscRuns.length > 0;
+
   // Baseline speeds calculated from real user logs
   const baselineZone2Speed = useMemo(() => {
     if (zone2Runs.length === 0) return 9.5;
@@ -137,6 +146,19 @@ export const RaceSimulatorView: React.FC<RaceSimulatorViewProps> = ({
       { name: 'Full Marathon', distance: 42.195, icon: Award, ...riegelPredictor(42.195), targetHR: '75-80% HRMax' },
     ];
   }, [predictionMode, custom5kSpeed, simulatedVO2, fatigueExponent]);
+
+  if (!hasData) {
+    return (
+      <EmptyState
+        icon={Gauge}
+        title="No Runs to Simulate From"
+        message="Race predictions are derived from your Zone 2 pace and peak 4x4 speed. Import your Apple Health data or load the demo dataset to generate a forecast."
+        accent="amber"
+        onOpenAppleHealthModal={onOpenAppleHealthModal}
+        onResetData={onResetData}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">

@@ -16,6 +16,7 @@ import {
   TrendingUp,
   Filter
 } from 'lucide-react';
+import { EmptyState } from './EmptyState';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -35,6 +36,8 @@ interface MiscRunsViewProps {
   onDeleteRun?: (dateStr: string) => void;
   restingHR?: number;
   maxHR?: number;
+  onOpenAppleHealthModal?: () => void;
+  onResetData?: () => void;
 }
 
 const CustomMiscTooltip = ({ active, payload, label }: any) => {
@@ -82,6 +85,8 @@ export const MiscRunsView: React.FC<MiscRunsViewProps> = ({
   onDeleteRun,
   restingHR = DEFAULT_PHYSIOLOGY.restingHR,
   maxHR = DEFAULT_PHYSIOLOGY.maxHR,
+  onOpenAppleHealthModal,
+  onResetData,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
@@ -180,6 +185,19 @@ export const MiscRunsView: React.FC<MiscRunsViewProps> = ({
     });
     return groups;
   }, [filteredRuns]);
+
+  if (miscRuns.length === 0) {
+    return (
+      <EmptyState
+        icon={Layers}
+        title="No General Runs Logged"
+        message="Tempo efforts, 5K time trials and shakeout runs appear here once imported. Load your Apple Health export or the demo dataset to populate this view."
+        accent="purple"
+        onOpenAppleHealthModal={onOpenAppleHealthModal}
+        onResetData={onResetData}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">

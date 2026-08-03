@@ -24,6 +24,7 @@ import {
   Trophy,
   History,
   Layers,
+  LayoutDashboard,
   TrendingUp
 } from 'lucide-react';
 import {
@@ -33,6 +34,7 @@ import {
   calculateGenericHRRAerobicIndex,
   DEFAULT_PHYSIOLOGY
 } from '../utils/cardioMetrics';
+import { EmptyState } from './EmptyState';
 
 interface DashboardViewProps {
   zone2Runs: Zone2Run[];
@@ -42,6 +44,8 @@ interface DashboardViewProps {
   onOpenInfoModal: () => void;
   restingHR?: number;
   maxHR?: number;
+  onOpenAppleHealthModal?: () => void;
+  onResetData?: () => void;
 }
 
 // Compact, high-contrast, clean custom tooltip
@@ -98,7 +102,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onOpenInfoModal,
   restingHR = DEFAULT_PHYSIOLOGY.restingHR,
   maxHR = DEFAULT_PHYSIOLOGY.maxHR,
+  onOpenAppleHealthModal,
+  onResetData,
 }) => {
+  const hasData = zone2Runs.length > 0 || norwegianSessions.length > 0 || miscRuns.length > 0;
+
   // Sort runs
   const sortedZone2 = useMemo(() => {
     return [...zone2Runs].sort(
@@ -292,6 +300,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         };
       });
   }, [sorted4x4]);
+
+  if (!hasData) {
+    return (
+      <EmptyState
+        icon={LayoutDashboard}
+        title="No Workouts Yet"
+        message="Your dashboard populates once there is training data to chart. Import your Apple Health export or load the demo dataset to get started."
+        accent="indigo"
+        onOpenAppleHealthModal={onOpenAppleHealthModal}
+        onResetData={onResetData}
+      />
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">

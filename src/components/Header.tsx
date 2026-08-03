@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TabType, TimeRangeOption } from '../types';
 import {
   Activity,
@@ -14,7 +14,8 @@ import {
   History,
   Target,
   Gauge,
-  Layers
+  Layers,
+  MoreVertical
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -46,8 +47,32 @@ export const Header: React.FC<HeaderProps> = ({
   onResetData,
   onClearData,
 }) => {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Dismiss the overflow menu on outside tap or Escape.
+  useEffect(() => {
+    if (!isMenuOpen) return;
+
+    const handlePointer = (e: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsMenuOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointer);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointer);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [isMenuOpen]);
+
   return (
-    <header className="border-b border-slate-800 bg-slate-900/95 backdrop-blur-md sticky top-0 z-30 shadow-md">
+    <header className="border-b border-slate-800 bg-slate-900/95 backdrop-blur-md sticky top-0 z-30 shadow-md pt-safe px-safe">
       <div className="max-w-7xl mx-auto px-2 sm:px-5 py-1 sm:py-1.5 space-y-1 sm:space-y-1.5">
         {/* Top Bar: Logo & Controls */}
         <div className="flex items-center justify-between gap-1.5 flex-wrap sm:flex-nowrap">
@@ -66,88 +91,111 @@ export const Header: React.FC<HeaderProps> = ({
             </h1>
           </div>
 
-          {/* Compact Control Actions */}
-          <div className="flex items-center gap-1 sm:gap-1.5 text-xs flex-wrap">
-            {/* Global Start Year Cutoff Dropdown */}
-            <div className="flex items-center gap-0.5 sm:gap-1 bg-slate-950 px-1.5 sm:px-2 py-0.5 rounded-lg border border-slate-800 text-[10px] sm:text-[11px]">
-              <span className="text-slate-400 font-medium hidden md:inline">Cutoff:</span>
-              <select
-                value={startYearCutoff}
-                onChange={(e) => setStartYearCutoff(e.target.value)}
-                className="bg-transparent text-emerald-400 font-bold focus:outline-none cursor-pointer text-[10px] sm:text-[11px]"
-                title="Filter dataset starting from selected year"
-              >
-                <option value="all" className="bg-slate-900 text-white">All Years</option>
-                {availableYears.map((yr) => (
-                  <option key={yr} value={String(yr)} className="bg-slate-900 text-white">
-                    From {yr}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Time Range Toggle */}
-            <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800">
-              {(['30d', '90d', 'all'] as TimeRangeOption[]).map((option) => (
-                <button
-                  key={option}
-                  onClick={() => setTimeRange(option)}
-                  className={`px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-[11px] font-medium rounded transition-all ${
-                    timeRange === option
-                      ? 'bg-slate-800 text-cyan-300 border border-slate-700'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {option === '30d' ? '30d' : option === '90d' ? '90d' : 'All'}
-                </button>
-              ))}
-            </div>
-
-            {/* Apple Health Import */}
+          {/* Primary actions. Secondary and destructive ones live in the
+              overflow menu so the header stays one row on a phone. */}
+          <div className="flex items-center gap-1.5 text-xs">
             <button
               onClick={onOpenAppleHealthModal}
-              className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-semibold rounded-lg bg-emerald-950/80 border border-emerald-800/80 text-emerald-300 hover:bg-emerald-900 transition-all"
+              className="inline-flex items-center gap-1 px-2.5 py-2 text-[11px] font-semibold rounded-lg bg-emerald-950/80 border border-emerald-800/80 text-emerald-300 hover:bg-emerald-900 transition-all"
               title="Sync Apple Health / HealthKit"
+              aria-label="Import Apple Health data"
             >
-              <UploadCloud className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-emerald-400" />
+              <UploadCloud className="h-3.5 w-3.5 text-emerald-400" />
               <span className="hidden xs:inline">Health</span>
             </button>
 
-            {/* Info Docs */}
-            <button
-              onClick={onOpenInfoModal}
-              className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-all"
-              title="Methodology Docs"
-            >
-              <Info className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-cyan-400" />
-            </button>
-
-            {/* Demo Reset */}
-            <button
-              onClick={onResetData}
-              className="p-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-all"
-              title="Load Demo Data"
-            >
-              <RotateCcw className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-slate-400" />
-            </button>
-
-            {/* Clear Data */}
-            <button
-              onClick={onClearData}
-              className="p-1 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/60 text-rose-300 transition-all"
-              title="Clear All Workouts"
-            >
-              <Trash2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-rose-400" />
-            </button>
-
-            {/* Add Session */}
             <button
               onClick={onOpenAddModal}
-              className="inline-flex items-center gap-1 px-2 sm:px-2.5 py-0.5 sm:py-1 text-[10px] sm:text-[11px] font-bold rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-sm transition-all"
+              className="inline-flex items-center gap-1 px-3 py-2 text-[11px] font-bold rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-sm transition-all"
+              aria-label="Log a session"
             >
-              <Plus className="h-3 w-3 sm:h-3.5 sm:w-3.5 stroke-[2.5]" />
+              <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
               <span className="hidden xs:inline">Log</span>
             </button>
+
+            {/* Overflow menu */}
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={() => setIsMenuOpen((open) => !open)}
+                className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition-all"
+                aria-label="More actions"
+                aria-expanded={isMenuOpen}
+                aria-haspopup="menu"
+              >
+                <MoreVertical className="h-4 w-4 text-slate-300" />
+              </button>
+
+              {isMenuOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 mt-1.5 w-56 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-40"
+                >
+                  <button
+                    role="menuitem"
+                    onClick={() => { setIsMenuOpen(false); onOpenInfoModal(); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 text-xs font-semibold text-slate-200 hover:bg-slate-800 transition-colors text-left"
+                  >
+                    <Info className="h-4 w-4 text-cyan-400 shrink-0" />
+                    <span>Metric Methodology</span>
+                  </button>
+
+                  <button
+                    role="menuitem"
+                    onClick={() => { setIsMenuOpen(false); onResetData(); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 text-xs font-semibold text-slate-200 hover:bg-slate-800 transition-colors text-left border-t border-slate-800"
+                  >
+                    <RotateCcw className="h-4 w-4 text-slate-400 shrink-0" />
+                    <span>Load Demo Data</span>
+                  </button>
+
+                  <button
+                    role="menuitem"
+                    onClick={() => { setIsMenuOpen(false); onClearData(); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 text-xs font-semibold text-rose-300 hover:bg-rose-950/50 transition-colors text-left border-t border-slate-800"
+                  >
+                    <Trash2 className="h-4 w-4 text-rose-400 shrink-0" />
+                    <span>Clear All Workouts</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex items-center gap-1.5 text-xs">
+          <div className="flex items-center gap-1 bg-slate-950 px-2 py-1.5 rounded-lg border border-slate-800 text-[11px]">
+            <span className="text-slate-400 font-medium hidden md:inline">Cutoff:</span>
+            <select
+              value={startYearCutoff}
+              onChange={(e) => setStartYearCutoff(e.target.value)}
+              className="bg-transparent text-emerald-400 font-bold focus:outline-none cursor-pointer text-[11px]"
+              title="Filter dataset starting from selected year"
+              aria-label="Filter dataset from year"
+            >
+              <option value="all" className="bg-slate-900 text-white">All Years</option>
+              {availableYears.map((yr) => (
+                <option key={yr} value={String(yr)} className="bg-slate-900 text-white">
+                  From {yr}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+            {(['30d', '90d', 'all'] as TimeRangeOption[]).map((option) => (
+              <button
+                key={option}
+                onClick={() => setTimeRange(option)}
+                className={`px-2.5 py-1.5 text-[11px] font-medium rounded transition-all ${
+                  timeRange === option
+                    ? 'bg-slate-800 text-cyan-300 border border-slate-700'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {option === '30d' ? '30d' : option === '90d' ? '90d' : 'All'}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -157,7 +205,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Dashboard */}
             <button
               onClick={() => setActiveTab('dashboard')}
-              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
                 activeTab === 'dashboard'
                   ? 'bg-indigo-950/80 text-indigo-300 border border-indigo-700'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -170,7 +218,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Zone 2 */}
             <button
               onClick={() => setActiveTab('zone2')}
-              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
                 activeTab === 'zone2'
                   ? 'bg-cyan-950/80 text-cyan-300 border border-cyan-700'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -183,7 +231,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Norwegian 4x4 */}
             <button
               onClick={() => setActiveTab('norwegian4x4')}
-              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
                 activeTab === 'norwegian4x4'
                   ? 'bg-rose-950/80 text-rose-300 border border-rose-700'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -196,7 +244,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Misc / General Runs */}
             <button
               onClick={() => setActiveTab('miscRuns')}
-              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
                 activeTab === 'miscRuns'
                   ? 'bg-purple-950/80 text-purple-300 border border-purple-700'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -209,7 +257,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Historical */}
             <button
               onClick={() => setActiveTab('trainingPlanner')}
-              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
                 activeTab === 'trainingPlanner'
                   ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -222,7 +270,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Race Simulator */}
             <button
               onClick={() => setActiveTab('raceSimulator')}
-              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
                 activeTab === 'raceSimulator'
                   ? 'bg-amber-950/80 text-amber-300 border border-amber-700'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
@@ -235,7 +283,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Cardio Lab */}
             <button
               onClick={() => setActiveTab('cardioLab')}
-              className={`flex items-center gap-1 px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-2 text-[11px] sm:text-xs font-semibold rounded-md transition-all whitespace-nowrap ${
                 activeTab === 'cardioLab'
                   ? 'bg-purple-950/80 text-purple-300 border border-purple-700'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'

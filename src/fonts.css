@@ -1,0 +1,21 @@
+/* Self-hosted latin subsets so text renders correctly offline inside the iOS
+   WebView, where fonts.googleapis.com is unreachable.
+
+   Both families are variable fonts: a single file covers the whole weight
+   range, so the axis is declared rather than shipping one file per weight. */
+
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('./assets/fonts/plus-jakarta-sans-variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('./assets/fonts/jetbrains-mono-variable.woff2') format('woff2');
+}

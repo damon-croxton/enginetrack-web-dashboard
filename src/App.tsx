@@ -244,6 +244,17 @@ export default function App() {
   };
 
   const handleClearData = () => {
+    // Destructive and irreversible: on a phone this button sits a thumb's width
+    // from "Load Demo Data", so require an explicit confirmation.
+    const total = zone2Runs.length + norwegianSessions.length + miscRuns.length;
+    if (total > 0) {
+      const confirmed = window.confirm(
+        `Delete all ${total} logged workout${total === 1 ? '' : 's'}?\n\n` +
+          'This clears your imported Apple Health data from this device and cannot be undone.'
+      );
+      if (!confirmed) return;
+    }
+
     setZone2Runs([]);
     setNorwegianSessions([]);
     setMiscRuns([]);
@@ -285,6 +296,8 @@ export default function App() {
             onOpenInfoModal={() => setIsInfoModalOpen(true)}
             restingHR={restingHR}
             maxHR={maxHR}
+          onOpenAppleHealthModal={() => setIsAppleHealthModalOpen(true)}
+          onResetData={handleResetData}
           />
         )}
         {activeTab === 'zone2' && (
@@ -314,6 +327,8 @@ export default function App() {
             miscRuns={filteredMiscRuns}
             restingHR={restingHR}
             maxHR={maxHR}
+          onOpenAppleHealthModal={() => setIsAppleHealthModalOpen(true)}
+          onResetData={handleResetData}
           />
         )}
         {activeTab === 'trainingPlanner' && (
@@ -322,6 +337,8 @@ export default function App() {
             norwegianSessions={filtered4x4Sessions}
             miscRuns={filteredMiscRuns}
             startYearCutoff={startYearCutoff}
+          onOpenAppleHealthModal={() => setIsAppleHealthModalOpen(true)}
+          onResetData={handleResetData}
           />
         )}
         {activeTab === 'raceSimulator' && (
@@ -329,6 +346,8 @@ export default function App() {
             zone2Runs={filteredZone2Runs}
             norwegianSessions={filtered4x4Sessions}
             miscRuns={filteredMiscRuns}
+          onOpenAppleHealthModal={() => setIsAppleHealthModalOpen(true)}
+          onResetData={handleResetData}
           />
         )}
         {activeTab === 'cardioLab' && (
@@ -343,7 +362,7 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800 bg-slate-950/60 py-6 text-center text-xs text-slate-500">
+      <footer className="border-t border-slate-800 bg-slate-950/60 py-6 text-center text-xs text-slate-500 pb-safe px-safe">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div>
             <strong className="text-slate-400">EngineTrack Web Dashboard</strong> • High Performance Endurance & HIIT Engine Analytics
