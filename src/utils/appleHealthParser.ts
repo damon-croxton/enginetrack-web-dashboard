@@ -1,4 +1,4 @@
-import JSZip from 'jszip';
+import { Unzip, AsyncUnzipInflate, UnzipFile } from 'fflate';
 import { Zone2Run, Norwegian4x4Session, MiscRun, DataSource } from '../types';
 import {
   classifyWorkout,
@@ -37,10 +37,123 @@ const TARGET_4X4_DATES = new Set([
   '2025-12-22', '2025-11-18'
 ]);
 
+/** ZIP local file header signature, "PK\x03\x04". */
+const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
+
 /**
- * High-performance, streaming parser for Apple Health export.xml or export.zip.
- * Emulates Python's ET.iterparse using chunked Streams and TextDecoder.
- * Maintains buffer size < 50KB at all times to prevent 'Invalid string length' or memory crashes on 1GB+ XML files.
+ * Inflates the export.xml entry of a ZIP incrementally, handing decompressed
+ * chunks straight to `onChunk`.
+ *
+ * The whole point is that neither the archive nor the decompressed entry is
+ * ever held in memory: compressed bytes are pushed in from the file stream and
+ * inflated output is consumed as it appears. `AsyncUnzipInflate` also performs
+ * the inflate off the main thread.
+ */
+async function streamZipEntry(
+  file: File,
+  onChunk: (bytes: Uint8Array) => void,
+  onProgressBytes: (compressedBytes: number) => Promise<void>
+): Promise<void> {
+  let entryFound = false;
+  let failure: Error | null = null;
+  let entryDone = false;
+
+  const unzip = new Unzip();
+  unzip.register(AsyncUnzipInflate);
+
+  unzip.onfile = (entry: UnzipFile) => {
+    if (entryFound || !isExportXmlEntry(entry.name)) return;
+    entryFound = true;
+
+    entry.ondata = (err, chunk, final) => {
+      if (err) {
+        failure = err instanceof Error ? err : new Error(String(err));
+        return;
+      }
+      if (chunk && chunk.length > 0) onChunk(chunk);
+      if (final) entryDone = true;
+    };
+
+    entry.start();
+  };
+
+  const reader = file.stream().getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      // Signalling the end lets fflate flush the final inflate window.
+      unzip.push(new Uint8Array(0), true);
+      break;
+    }
+
+    unzip.push(value, false);
+    if (failure) throw failure;
+
+    await onProgressBytes(value.byteLength);
+  }
+
+  if (failure) throw failure;
+
+  // Decide this before draining. A corrupt archive never yields an entry, and
+  // waiting on inflate callbacks that will never arrive would stall the UI for
+  // the full timeout before reporting anything.
+  if (!entryFound) {
+    throw new Error(
+      'Could not read "export.xml" from that ZIP — the archive may be damaged, ' +
+        'or it may not be an Apple Health export. On iPhone you can press and hold ' +
+        'the file in Files, choose Uncompress, and import the export.xml inside.'
+    );
+  }
+
+  // The entry exists and is inflating; its callbacks are asynchronous, so the
+  // last of them can still be in flight once the source stream is exhausted.
+  const deadline = Date.now() + 30_000;
+  while (!entryDone && !failure && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  if (failure) throw failure;
+
+  if (!entryDone) {
+    throw new Error('Timed out while decompressing export.xml from that ZIP.');
+  }
+}
+
+/**
+ * True when the file really is a ZIP, judged by its first bytes.
+ *
+ * The extension alone is not trustworthy: the old check was case-sensitive, and
+ * a file picked through iOS Files may not arrive with the name it was exported
+ * under. Getting this wrong means feeding compressed bytes to the XML scanner,
+ * which finds no workouts and reports a confident zero.
+ */
+async function looksLikeZip(file: File): Promise<boolean> {
+  try {
+    const head = new Uint8Array(await file.slice(0, ZIP_MAGIC.length).arrayBuffer());
+    return ZIP_MAGIC.every((byte, i) => head[i] === byte);
+  } catch {
+    return file.name.toLowerCase().endsWith('.zip');
+  }
+}
+
+/** Picks the health export entry, ignoring the separate clinical-records file. */
+function isExportXmlEntry(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower.endsWith('export.xml') && !lower.includes('cda');
+}
+
+/**
+ * Streaming parser for Apple Health export.xml or export.zip.
+ *
+ * Memory is bounded end to end, which matters because a real export is
+ * 0.5-2 GB of XML and phones will kill the tab rather than allocate that:
+ *
+ * - ZIP entries are inflated incrementally by fflate. Nothing ever holds the
+ *   decompressed file — an earlier version called JSZip's `.async('blob')`,
+ *   which materialised the whole thing and reliably ran iOS Safari out of
+ *   memory.
+ * - The XML scan keeps its working buffer tiny by slicing away each parsed
+ *   element immediately, so V8 string allocations stay small.
  */
 export async function parseAppleHealthFile(
   file: File,
@@ -67,61 +180,51 @@ export async function parseAppleHealthFile(
 
   onProgress?.(5, 'Opening Apple Health stream...');
 
-  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-  let totalBytes = file.size;
-
-  if (file.name.endsWith('.zip')) {
-    onProgress?.(10, 'Extracting export.xml from ZIP archive...');
-    try {
-      const zip = new JSZip();
-      const zipContent = await zip.loadAsync(file);
-
-      const xmlZipFile =
-        zipContent.file('apple_health_export/export.xml') ||
-        zipContent.file('export.xml') ||
-        Object.values(zipContent.files).find(
-          (f) => f.name.endsWith('export.xml') && !f.name.toLowerCase().includes('cda')
-        );
-
-      if (!xmlZipFile) {
-        throw new Error('Could not find "export.xml" inside the selected ZIP archive.');
-      }
-
-      onProgress?.(15, 'Preparing stream from ZIP archive...');
-      const blob = await xmlZipFile.async('blob');
-      totalBytes = blob.size;
-      reader = blob.stream().getReader();
-    } catch (err: any) {
-      throw new Error(
-        'ZIP archive extraction error. If your ZIP file is over 1GB, please unzip it on your computer and select export.xml directly.'
-      );
-    }
-  } else {
-    // Direct stream from raw File object on disk
-    reader = file.stream().getReader();
-  }
-
   const decoder = new TextDecoder('utf-8', { fatal: false });
   let buffer = '';
-  let bytesRead = 0;
+  // Progress tracks bytes of the *source* file consumed. For a ZIP the
+  // decompressed size is unknowable while streaming, but file.size is exact.
+  let sourceBytesRead = 0;
+  let lastYieldAt = 0;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    bytesRead += value.byteLength;
-    buffer += decoder.decode(value, { stream: true });
-
-    // Process all completed <Workout>...</Workout> blocks currently in buffer
+  /**
+   * Feeds one chunk of decoded XML into the scanner. Shared by the raw .xml
+   * path and the ZIP path so both behave identically.
+   */
+  function consumeChunk(bytes: Uint8Array): void {
+    buffer += decoder.decode(bytes, { stream: true });
     processBuffer();
+  }
 
-    // Progress update
-    const pct = Math.min(99, Math.round((bytesRead / totalBytes) * 100));
-    onProgress?.(pct, `Parsing XML stream (${classified.accepted} running workouts extracted)...`);
+  function reportProgress(): void {
+    const pct = Math.min(99, Math.max(5, Math.round((sourceBytesRead / (file.size || 1)) * 100)));
+    onProgress?.(pct, `Parsing Apple Health data (${classified.accepted} runs found)...`);
+  }
 
-    // Yield main thread periodically so browser stays responsive
-    if (bytesRead % (8 * 1024 * 1024) < 64 * 1024) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+  /** Hands the main thread back periodically so the UI stays alive. */
+  async function maybeYield(): Promise<void> {
+    if (sourceBytesRead - lastYieldAt < 4 * 1024 * 1024) return;
+    lastYieldAt = sourceBytesRead;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  if (await looksLikeZip(file)) {
+    onProgress?.(8, 'Reading ZIP archive...');
+    await streamZipEntry(file, consumeChunk, async (bytes) => {
+      sourceBytesRead += bytes;
+      reportProgress();
+      await maybeYield();
+    });
+  } else {
+    const reader = file.stream().getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      sourceBytesRead += value.byteLength;
+      consumeChunk(value);
+      reportProgress();
+      await maybeYield();
     }
   }
 

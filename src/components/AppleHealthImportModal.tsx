@@ -440,6 +440,30 @@ export const AppleHealthImportModal: React.FC<AppleHealthImportModalProps> = ({
                 </div>
               </div>
 
+              {/* A parse that found nothing is far more likely to be a failure
+                  than a genuine absence of runs. Never present it as success. */}
+              {parsedData.runningWorkoutsFound === 0 && (
+                <div className="bg-rose-950/50 border border-rose-800 rounded-xl p-3.5 flex items-start gap-3">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-rose-400 mt-0.5" />
+                  <div className="text-xs text-rose-200/90 leading-relaxed space-y-1.5">
+                    <strong className="text-rose-300 font-semibold block">
+                      No running workouts were found in that file
+                    </strong>
+                    <p>
+                      If you know this export contains runs, the file most likely did not
+                      read correctly rather than being empty.
+                    </p>
+                    <p>
+                      On iPhone, open the <strong className="text-rose-100">Files</strong> app,
+                      press and hold <code className="font-mono text-rose-100">export.zip</code>,
+                      choose <strong className="text-rose-100">Uncompress</strong>, then import
+                      the <code className="font-mono text-rose-100">export.xml</code> inside the
+                      new folder.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Deliberate exclusions - shown so a missing session is never a mystery */}
               {parsedData.rejectedSessions > 0 && (
                 <div className="bg-amber-950/40 border border-amber-800/80 rounded-xl p-3.5 flex items-start gap-3">
@@ -455,7 +479,9 @@ export const AppleHealthImportModal: React.FC<AppleHealthImportModalProps> = ({
                 </div>
               )}
 
-              {/* Replace Sample Data Option */}
+              {/* Replace Sample Data Option. Hidden on a zero result: replacing
+                  existing workouts with nothing is pure data loss. */}
+              {parsedData.runningWorkoutsFound > 0 && (
               <label className="flex items-start gap-3 p-3.5 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer hover:border-cyan-500/50 transition-all group">
                 <input
                   type="checkbox"
@@ -472,6 +498,7 @@ export const AppleHealthImportModal: React.FC<AppleHealthImportModalProps> = ({
                   </span>
                 </div>
               </label>
+              )}
             </div>
           )}
 
@@ -495,7 +522,7 @@ export const AppleHealthImportModal: React.FC<AppleHealthImportModalProps> = ({
             {parsedData ? 'Select Different File' : 'Cancel'}
           </button>
 
-          {parsedData && (
+          {parsedData && parsedData.runningWorkoutsFound > 0 && (
             <button
               onClick={handleConfirmImport}
               className="px-5 py-2 text-xs font-semibold rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold shadow-lg shadow-cyan-500/20 flex items-center gap-2"
