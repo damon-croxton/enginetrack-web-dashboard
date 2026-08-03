@@ -464,6 +464,38 @@ export const AppleHealthImportModal: React.FC<AppleHealthImportModalProps> = ({
                 </div>
               )}
 
+              {/* What the parser actually saw. Without this, a wrong-looking
+                  classification can only be guessed at from a distance. */}
+              {parsedData.diagnostics.runningWorkoutsSeen > 0 && (
+                <details className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden">
+                  <summary className="px-4 py-3 text-[11px] font-bold text-slate-300 cursor-pointer hover:text-cyan-300 transition-colors">
+                    Parser details
+                  </summary>
+                  <div className="px-4 pb-3 text-[11px] font-mono text-slate-400 space-y-1">
+                    <div className="flex justify-between gap-4">
+                      <span>Running workouts seen</span>
+                      <span className="text-slate-200">{parsedData.diagnostics.runningWorkoutsSeen}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span>…with interval bouts</span>
+                      <span className="text-slate-200">{parsedData.diagnostics.workoutsWithActivities}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span>Interval bouts found</span>
+                      <span className="text-slate-200">{parsedData.diagnostics.activitiesSeen}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span>…missing heart rate</span>
+                      <span className="text-slate-200">{parsedData.diagnostics.activitiesMissingHR}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span>…missing distance</span>
+                      <span className="text-slate-200">{parsedData.diagnostics.activitiesMissingDistance}</span>
+                    </div>
+                  </div>
+                </details>
+              )}
+
               {/* Deliberate exclusions - shown so a missing session is never a mystery */}
               {parsedData.rejectedSessions > 0 && (
                 <div className="bg-amber-950/40 border border-amber-800/80 rounded-xl p-3.5 flex items-start gap-3">

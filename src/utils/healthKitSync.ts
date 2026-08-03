@@ -99,6 +99,13 @@ export async function syncHealthKit(
     restingHRDetected,
     maxHRDetected,
     source: 'healthkit',
+    diagnostics: {
+      runningWorkoutsSeen: 0,
+      workoutsWithActivities: 0,
+      activitiesSeen: 0,
+      activitiesMissingHR: 0,
+      activitiesMissingDistance: 0,
+    },
   };
 }
 
@@ -200,5 +207,12 @@ export async function loadDemoWorkouts(
     restingHRDetected: false,
     maxHRDetected: false,
     source: 'demo',
+    diagnostics: {
+      runningWorkoutsSeen: 0,
+      workoutsWithActivities: 0,
+      activitiesSeen: 0,
+      activitiesMissingHR: 0,
+      activitiesMissingDistance: 0,
+    },
   };
 }

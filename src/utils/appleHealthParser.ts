@@ -23,6 +23,25 @@ export interface ParsedAppleHealthData {
   maxHRDetected: boolean;
   /** Origin of this dataset. 'demo' means the figures are invented. */
   source: DataSource;
+  /**
+   * What the parser actually saw. Surfaced in the import summary because when
+   * classification looks wrong, these counts say why — without them the only
+   * option is guessing at someone else's export from a distance.
+   */
+  diagnostics: ParseDiagnostics;
+}
+
+export interface ParseDiagnostics {
+  /** Running workouts encountered, before classification. */
+  runningWorkoutsSeen: number;
+  /** Of those, how many carried <WorkoutActivity> bouts. */
+  workoutsWithActivities: number;
+  /** Total bouts kept. */
+  activitiesSeen: number;
+  /** Bouts with no per-interval heart rate statistic. */
+  activitiesMissingHR: number;
+  /** Bouts with no per-interval distance statistic. */
+  activitiesMissingDistance: number;
 }
 
 /** Apple Health record type carrying the daily resting heart rate figure. */
@@ -171,12 +190,26 @@ export async function parseAppleHealthFile(
       restingHRDetected: false,
       maxHRDetected: false,
       source: 'export',
+      diagnostics: {
+        runningWorkoutsSeen: 0,
+        workoutsWithActivities: 0,
+        activitiesSeen: 0,
+        activitiesMissingHR: 0,
+        activitiesMissingDistance: 0,
+      },
     };
   }
 
   const classified = createClassifiedWorkouts();
   const restingHRSamples: { dateMs: number; value: number }[] = [];
   let observedMaxHR = 0;
+
+  // Diagnostics — see ParseDiagnostics.
+  let runningWorkoutsSeen = 0;
+  let workoutsWithActivities = 0;
+  let activitiesSeen = 0;
+  let activitiesMissingHR = 0;
+  let activitiesMissingDistance = 0;
 
   onProgress?.(5, 'Opening Apple Health stream...');
 
@@ -444,10 +477,24 @@ export async function parseAppleHealthFile(
       const sMatch = /startDate=["']([^"']+)["']/i.exec(actXml);
       const eMatch = /endDate=["']([^"']+)["']/i.exec(actXml);
 
-      if (sMatch && eMatch) {
-        const sTime = new Date(sMatch[1]).getTime();
-        const eTime = new Date(eMatch[1]).getTime();
-        const durSec = (eTime - sTime) / 1000;
+      {
+        let durSec = 0;
+
+        if (sMatch && eMatch) {
+          durSec = (new Date(eMatch[1]).getTime() - new Date(sMatch[1]).getTime()) / 1000;
+        }
+
+        // Some exports carry duration as an attribute rather than a date range.
+        if (!Number.isFinite(durSec) || durSec <= 0) {
+          const durAttr = /\bduration=["']([^"']+)["']/i.exec(actXml);
+          if (durAttr) {
+            const value = parseFloat(durAttr[1]);
+            const unit = (/durationUnit=["']([^"']+)["']/i.exec(actXml)?.[1] ?? 'min').toLowerCase();
+            if (Number.isFinite(value)) {
+              durSec = unit === 'min' ? value * 60 : unit === 'hr' ? value * 3600 : value;
+            }
+          }
+        }
 
         let actDistKm = 0;
         let actHrVal = 0;
@@ -467,13 +514,25 @@ export async function parseAppleHealthFile(
           actHrVal = parseFloat(aHrMatch[1]);
         }
 
-        if (durSec > 0 && actHrVal > 0) {
+        // Keep the bout as long as its duration is known. Requiring a nested
+        // heart-rate statistic silently discarded every bout in exports that
+        // do not carry one - and Apple frequently records HR in separate
+        // <Record> elements rather than inside the activity. The result was an
+        // empty activity list, so a structured 4x4 session was indistinguishable
+        // from a plain continuous run and landed in "general runs".
+        if (durSec > 0) {
+          activitiesSeen++;
+          if (actHrVal <= 0) activitiesMissingHR++;
+          if (actDistKm <= 0) activitiesMissingDistance++;
           workoutActivities.push({ durSec, distKm: actDistKm, avgHr: actHrVal });
         }
       }
 
       actSearchPos = endIdx;
     }
+
+    if (workoutActivities.length > 0) workoutsWithActivities++;
+    runningWorkoutsSeen++;
 
     // 5. Hand off to the shared classifier so an export.xml import and a live
     //    HealthKit sync categorise the same workout identically.
@@ -544,5 +603,12 @@ export async function parseAppleHealthFile(
     restingHRDetected,
     maxHRDetected,
     source: 'export',
+    diagnostics: {
+      runningWorkoutsSeen,
+      workoutsWithActivities,
+      activitiesSeen,
+      activitiesMissingHR,
+      activitiesMissingDistance,
+    },
   };
 }

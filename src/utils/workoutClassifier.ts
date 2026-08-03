@@ -142,6 +142,10 @@ function classifyIntervalSession(
   for (const act of workout.activities) {
     if (act.durSec < WORK_INTERVAL_MIN_SEC || act.durSec > WORK_INTERVAL_MAX_SEC) continue;
 
+    // Exports often omit per-bout heart rate. Fall back to the workout average
+    // rather than recording a 0, which would drag the session average down.
+    const boutHr = act.avgHr > 0 ? act.avgHr : workout.avgHR;
+
     const speedKmh = act.distKm > 0 ? act.distKm / (act.durSec / 3600) : 0;
     const durMin = Math.floor(act.durSec / 60);
     const durSec = Math.floor(act.durSec % 60);
@@ -151,14 +155,14 @@ function classifyIntervalSession(
       Duration_Str: `${durMin}m ${durSec}s`,
       Distance_km: Number(act.distKm.toFixed(2)),
       Avg_Speed_kmh: Number(speedKmh.toFixed(1)),
-      Avg_HR: Number(act.avgHr.toFixed(1)),
+      Avg_HR: Number(boutHr.toFixed(1)),
     });
 
     totalWorkDist += act.distKm;
     totalWorkSec += act.durSec;
-    weightedHRSum += act.avgHr * act.durSec;
+    weightedHRSum += boutHr * act.durSec;
     if (speedKmh > peakSpeed) peakSpeed = speedKmh;
-    if (act.avgHr > peakHR) peakHR = act.avgHr;
+    if (boutHr > peakHR) peakHR = boutHr;
   }
 
   if (splits.length === 0) {
