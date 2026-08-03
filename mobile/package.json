@@ -1,0 +1,32 @@
+{
+  "name": "enginetrack-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "prebuild": "expo prebuild --clean",
+    "lint": "tsc --noEmit",
+    "build:dev": "eas build --platform ios --profile development",
+    "build:prod": "eas build --platform ios --profile production",
+    "submit": "eas submit --platform ios"
+  },
+  "dependencies": {
+    "@kingstinct/react-native-healthkit": "^14.0.2",
+    "expo": "~57.0.9",
+    "expo-asset": "~57.0.8",
+    "expo-build-properties": "~57.0.8",
+    "expo-file-system": "~57.0.1",
+    "expo-splash-screen": "~57.0.5",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.2",
+    "react-native-nitro-modules": "^0.35.0",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-webview": "13.16.1"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  }
+}

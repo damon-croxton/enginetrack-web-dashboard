@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
+    "build:mobile": "BUILD_TARGET=mobile vite build && node scripts/sync-mobile-bundle.mjs",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
+    "clean": "rm -rf dist dist-mobile server.js",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -25,6 +26,7 @@
     "vite": "^6.2.3"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
@@ -32,6 +34,6 @@
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.3",
-    "@types/express": "^4.17.21"
+    "vite-plugin-singlefile": "^2.3.3"
   }
 }

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { parseAppleHealthFile, ParsedAppleHealthData } from '../utils/appleHealthParser';
-import { loadDemoWorkouts, isHealthKitSupported } from '../utils/healthKitSync';
+import { loadDemoWorkouts, syncHealthKit, isHealthKitSupported } from '../utils/healthKitSync';
 import { Zone2Run, Norwegian4x4Session } from '../types';
 import {
   X,
@@ -49,17 +49,25 @@ export const AppleHealthImportModal: React.FC<AppleHealthImportModalProps> = ({
     setErrorMessage(null);
     setIsParsing(true);
     setProgressPercent(10);
-    setStatusText('Loading sample workouts...');
+    setStatusText(isNative ? 'Requesting Apple Health access...' : 'Loading sample workouts...');
+
+    const onProgress = (percent: number, text: string) => {
+      setProgressPercent(percent);
+      setStatusText(text);
+    };
 
     try {
-      const result = await loadDemoWorkouts((percent, text) => {
-        setProgressPercent(percent);
-        setStatusText(text);
-      });
+      // Only the native bridge yields real data; everything else is samples.
+      const result = isNative
+        ? await syncHealthKit(onProgress)
+        : await loadDemoWorkouts(onProgress);
       setParsedData(result);
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err.message || 'Failed to load sample workouts.');
+      setErrorMessage(
+        err.message ||
+          (isNative ? 'Apple Health sync failed.' : 'Failed to load sample workouts.')
+      );
     } finally {
       setIsParsing(false);
     }

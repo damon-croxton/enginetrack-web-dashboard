@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "EngineTrack Cardio",
+    "slug": "enginetrack-cardio",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "enginetrack",
+    "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#020617"
+    },
+    "assetBundlePatterns": ["assets/**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.enginetrack.cardio",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSHealthShareUsageDescription": "EngineTrack reads your running workouts and heart rate data to calculate Zone 2 aerobic power and Norwegian 4x4 interval metrics. Your health data stays on this device.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.healthkit.access": []
+      }
+    },
+    "plugins": [
+      "expo-asset",
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "EngineTrack reads your running workouts and heart rate data to calculate Zone 2 aerobic power and Norwegian 4x4 interval metrics.",
+          "background": false
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.4"
+          }
+        }
+      ]
+    ]
+  }
+}

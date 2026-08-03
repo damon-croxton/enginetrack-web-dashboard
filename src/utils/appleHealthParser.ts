@@ -1,5 +1,10 @@
 import JSZip from 'jszip';
-import { Zone2Run, Norwegian4x4Session, IntervalSplit, MiscRun, DataSource } from '../types';
+import { Zone2Run, Norwegian4x4Session, MiscRun, DataSource } from '../types';
+import {
+  classifyWorkout,
+  createClassifiedWorkouts,
+  sortClassified,
+} from './workoutClassifier';
 
 export interface ParsedAppleHealthData {
   zone2Runs: Zone2Run[];
@@ -56,15 +61,9 @@ export async function parseAppleHealthFile(
     };
   }
 
-  const zone2Runs: Zone2Run[] = [];
-  const norwegianSessions: Norwegian4x4Session[] = [];
-  const miscRuns: MiscRun[] = [];
-  let runningWorkoutsFound = 0;
-  let rejectedSessions = 0;
+  const classified = createClassifiedWorkouts();
   const restingHRSamples: { dateMs: number; value: number }[] = [];
   let observedMaxHR = 0;
-  // Peak HR taken from WorkoutStatistics maxima - a true max, unlike averages.
-  let observedPeakHR = 0;
 
   onProgress?.(5, 'Opening Apple Health stream...');
 
@@ -118,7 +117,7 @@ export async function parseAppleHealthFile(
 
     // Progress update
     const pct = Math.min(99, Math.round((bytesRead / totalBytes) * 100));
-    onProgress?.(pct, `Parsing XML stream (${runningWorkoutsFound} running workouts extracted)...`);
+    onProgress?.(pct, `Parsing XML stream (${classified.accepted} running workouts extracted)...`);
 
     // Yield main thread periodically so browser stays responsive
     if (bytesRead % (8 * 1024 * 1024) < 64 * 1024) {
@@ -303,15 +302,16 @@ export async function parseAppleHealthFile(
 
     // True peak HR for this workout. Averages systematically understate max HR,
     // which skews every HRR-based metric downstream.
+    let workoutPeakHR = 0;
     const hrMaxMatch = /<WorkoutStatistics\s+[^>]*type=["'][^"']*HeartRate["'][^>]*maximum=["']([^"']+)["']/i.exec(xml);
     if (hrMaxMatch) {
       const peak = parseFloat(hrMaxMatch[1]);
-      if (Number.isFinite(peak) && peak > observedPeakHR) observedPeakHR = peak;
+      if (Number.isFinite(peak)) workoutPeakHR = peak;
     } else {
       const metaMaxMatch = /<MetadataEntry\s+[^>]*key=["']HKMaximumHeartRate["'][^>]*value=["']([^"']+)["']/i.exec(xml);
       if (metaMaxMatch) {
         const peak = parseFloat(metaMaxMatch[1]);
-        if (Number.isFinite(peak) && peak > observedPeakHR) observedPeakHR = peak;
+        if (Number.isFinite(peak)) workoutPeakHR = peak;
       }
     }
 
@@ -372,126 +372,29 @@ export async function parseAppleHealthFile(
       actSearchPos = endIdx;
     }
 
-    // 5. Determine if Norwegian 4x4 or Zone 2 Run
-    const is4x4 =
-      workoutActivities.length > 2 ||
-      avgHR > 160 ||
-      TARGET_4X4_DATES.has(dateFormatted);
-
-    if (is4x4 && workoutActivities.length > 0) {
-      // Extract 4x4 work intervals (window: 235s to 245s, i.e. 3m55s to 4m05s)
-      const splits: IntervalSplit[] = [];
-      let totalWorkDist = 0;
-      let totalWorkSec = 0;
-      let weightedHRSum = 0;
-      let peakSpeed = 0;
-      let peakHR = 0;
-      let intervalIdx = 1;
-
-      for (const act of workoutActivities) {
-        if (act.durSec >= 235 && act.durSec <= 245) {
-          const speedKmh = act.distKm > 0 ? act.distKm / (act.durSec / 3600) : 0;
-          const durMin = Math.floor(act.durSec / 60);
-          const durSec = Math.floor(act.durSec % 60);
-
-          splits.push({
-            Step: `Interval ${intervalIdx}`,
-            Duration_Str: `${durMin}m ${durSec}s`,
-            Distance_km: Number(act.distKm.toFixed(2)),
-            Avg_Speed_kmh: Number(speedKmh.toFixed(1)),
-            Avg_HR: Number(act.avgHr.toFixed(1)),
-          });
-
-          totalWorkDist += act.distKm;
-          totalWorkSec += act.durSec;
-          weightedHRSum += act.avgHr * act.durSec;
-          if (speedKmh > peakSpeed) peakSpeed = speedKmh;
-          if (act.avgHr > peakHR) peakHR = act.avgHr;
-
-          intervalIdx++;
-        }
-      }
-
-      if (splits.length > 0) {
-        const avgWorkHR = totalWorkSec > 0 ? weightedHRSum / totalWorkSec : avgHR;
-        const avgWorkSpeed = totalWorkSec > 0 ? totalWorkDist / (totalWorkSec / 3600) : 0;
-
-        norwegianSessions.push({
-          Source: 'export',
-          Date_Str: dateFormatted,
-          Total_Work_Intervals: splits.length,
-          Avg_Speed_kmh: Number(avgWorkSpeed.toFixed(1)),
-          Avg_Work_HR: Number(avgWorkHR.toFixed(1)),
-          Total_Work_Distance_km: Number(totalWorkDist.toFixed(2)),
-          Peak_Interval_Speed: Number(peakSpeed.toFixed(1)),
-          Peak_Interval_HR: Number(peakHR.toFixed(1)),
-          Splits: splits,
-        });
-
-        runningWorkoutsFound++;
-      } else {
-        // Interval session with no bout in the 3m55s-4m05s window. Excluding it
-        // is intentional (the workout went wrong), but count it so the import
-        // summary doesn't quietly under-report.
-        rejectedSessions++;
-      }
-    } else {
-      // Steady/General Runs
-      if (totalDistKm > 0 && durationMin > 0) {
-        const speedKmh = totalDistKm / (durationMin / 60.0);
-        const ewWkg = speedKmh * 0.2917;
-        const api = avgHR > 0 ? (ewWkg / avgHR) * 1000 : 0;
-
-        // Zone 2 / Aerobic Base criteria: Majority of time in Z1/Z2/Z3 (Avg HR <= 158 bpm, or speed <= 11.5 km/h), min distance 2.5km
-        const isZone2 = totalDistKm >= 2.5 && ((avgHR > 0 && avgHR <= 158) || (avgHR === 0 && speedKmh <= 11.5));
-
-        if (isZone2) {
-          zone2Runs.push({
-            Source: 'export',
-            Date_Str: dateFormatted,
-            Total_Distance_km: Number(totalDistKm.toFixed(1)),
-            Duration_min: Number(durationMin.toFixed(1)),
-            Avg_Speed_kmh: Number(speedKmh.toFixed(1)),
-            Avg_HR: Number(avgHR.toFixed(1)),
-            Avg_eW_wkg: Number(ewWkg.toFixed(2)),
-            Aerobic_Power_Index: Number(api.toFixed(1)),
-          });
-        } else {
-          // Categorize Misc / High Intensity Run (Tempo, 5K effort, shakeout)
-          let workoutType = 'General Run';
-          if (totalDistKm >= 4.5 && totalDistKm <= 5.5 && (avgHR >= 165 || speedKmh >= 12.0)) {
-            workoutType = '5K Effort';
-          } else if (avgHR >= 160 || speedKmh >= 11.5) {
-            workoutType = 'Tempo / Threshold';
-          } else if (totalDistKm < 2.5) {
-            workoutType = 'Short Run / Shakeout';
-          }
-
-          miscRuns.push({
-            Source: 'export',
-            Date_Str: dateFormatted,
-            Total_Distance_km: Number(totalDistKm.toFixed(1)),
-            Duration_min: Number(durationMin.toFixed(1)),
-            Avg_Speed_kmh: Number(speedKmh.toFixed(1)),
-            Avg_HR: Number(avgHR.toFixed(1)),
-            Workout_Type: workoutType,
-            Notes: `Extracted from Apple Health (${totalDistKm.toFixed(1)} km at ${speedKmh.toFixed(1)} km/h)`,
-          });
-        }
-
-        runningWorkoutsFound++;
-      }
-    }
+    // 5. Hand off to the shared classifier so an export.xml import and a live
+    //    HealthKit sync categorise the same workout identically.
+    classifyWorkout(
+      {
+        dateStr: dateFormatted,
+        durationMin,
+        totalDistanceKm: totalDistKm,
+        avgHR,
+        maxHR: workoutPeakHR,
+        activities: workoutActivities,
+      },
+      classified,
+      'export',
+      TARGET_4X4_DATES
+    );
   }
 
-  // Sort chronological
-  zone2Runs.sort((a, b) => new Date(a.Date_Str).getTime() - new Date(b.Date_Str).getTime());
-  norwegianSessions.sort((a, b) => new Date(a.Date_Str).getTime() - new Date(b.Date_Str).getTime());
-  miscRuns.sort((a, b) => new Date(a.Date_Str).getTime() - new Date(b.Date_Str).getTime());
+  sortClassified(classified);
+  const { zone2Runs, norwegianSessions, miscRuns } = classified;
 
   // Prefer true workout maxima; fall back to per-run averages only when no
   // WorkoutStatistics maximum was present anywhere in the export.
-  observedMaxHR = observedPeakHR;
+  observedMaxHR = classified.observedPeakHR;
   if (observedMaxHR <= 0) {
     [...zone2Runs, ...miscRuns].forEach((r) => {
       if (r.Avg_HR > observedMaxHR) observedMaxHR = r.Avg_HR;
@@ -520,17 +423,18 @@ export async function parseAppleHealthFile(
   const maxHRDetected = observedMaxHR > 150;
   const detectedMaxHR = maxHRDetected ? Math.round(observedMaxHR) : 188;
 
+  const { rejectedSessions } = classified;
   const summary = rejectedSessions > 0
-    ? `Done! Extracted ${runningWorkoutsFound} running workouts (${rejectedSessions} interval session${rejectedSessions === 1 ? '' : 's'} excluded).`
-    : `Done! Extracted ${runningWorkoutsFound} running workouts.`;
+    ? `Done! Extracted ${classified.accepted} running workouts (${rejectedSessions} interval session${rejectedSessions === 1 ? '' : 's'} excluded).`
+    : `Done! Extracted ${classified.accepted} running workouts.`;
   onProgress?.(100, summary);
 
   return {
     zone2Runs,
     norwegianSessions,
     miscRuns,
-    totalWorkoutsFound: runningWorkoutsFound,
-    runningWorkoutsFound,
+    totalWorkoutsFound: classified.accepted,
+    runningWorkoutsFound: classified.accepted,
     rejectedSessions,
     detectedRestingHR,
     detectedMaxHR,

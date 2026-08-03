@@ -1,5 +1,11 @@
 import { Zone2Run, Norwegian4x4Session, MiscRun } from '../types';
 import { ParsedAppleHealthData } from './appleHealthParser';
+import {
+  classifyWorkout,
+  createClassifiedWorkouts,
+  sortClassified,
+  RawWorkout,
+} from './workoutClassifier';
 
 export interface HealthKitSyncStatus {
   isAvailable: boolean;
@@ -10,13 +16,90 @@ export interface HealthKitSyncStatus {
 }
 
 /**
- * Checks if HealthKit native interface is available in current environment (Expo/iOS WebView)
+ * Payload the native shell returns for a sync. Workouts arrive unclassified so
+ * the same rules apply here as to an export.xml import.
+ */
+export interface NativeHealthPayload {
+  workouts: RawWorkout[];
+  /** Daily resting HR samples, already limited to a recent window by the shell. */
+  restingHRSamples: number[];
+  /** Highest heart rate observed across the queried period, 0 if unknown. */
+  maxHR: number;
+}
+
+/**
+ * Injected by the Expo shell (mobile/src/injected.ts). Absent in a browser.
+ */
+interface NativeHealthKitBridge {
+  sync(onProgress?: (percent: number, text: string) => void): Promise<NativeHealthPayload>;
+}
+
+declare global {
+  interface Window {
+    nativeHealthKit?: NativeHealthKitBridge;
+  }
+}
+
+/**
+ * True only when a real native HealthKit bridge is present. In a browser this
+ * is always false — Safari and Chrome cannot reach HealthKit — and the UI must
+ * present the sample-data path as sample data rather than a device sync.
  */
 export function isHealthKitSupported(): boolean {
   if (typeof window === 'undefined') return false;
-  // Check for window.webkit (iOS WebKit bridge) or window.ExpoHealthKit or window.nativeHealthKit
-  const win = window as any;
-  return Boolean(win.webkit?.messageHandlers?.HealthKit || win.ExpoHealthKit || win.nativeHealthKit);
+  return typeof window.nativeHealthKit?.sync === 'function';
+}
+
+/**
+ * Pulls running workouts from Apple Health via the native bridge, then runs them
+ * through the shared classifier so a device sync and a file import agree.
+ *
+ * Throws if called without a bridge — callers should gate on
+ * `isHealthKitSupported()` and fall back to `loadDemoWorkouts`.
+ */
+export async function syncHealthKit(
+  onProgress?: (percent: number, text: string) => void
+): Promise<ParsedAppleHealthData> {
+  const bridge = window.nativeHealthKit;
+  if (!bridge) {
+    throw new Error('HealthKit is not available in this environment.');
+  }
+
+  const payload = await bridge.sync(onProgress);
+
+  onProgress?.(90, 'Classifying workouts...');
+
+  const classified = createClassifiedWorkouts();
+  for (const workout of payload.workouts) {
+    classifyWorkout(workout, classified, 'healthkit');
+  }
+  sortClassified(classified);
+
+  const restingHRDetected = payload.restingHRSamples.length > 0;
+  const detectedRestingHR = restingHRDetected
+    ? Math.round(
+        payload.restingHRSamples.reduce((a, b) => a + b, 0) / payload.restingHRSamples.length
+      )
+    : 52;
+
+  const observedMax = Math.max(payload.maxHR, classified.observedPeakHR);
+  const maxHRDetected = observedMax > 150;
+
+  onProgress?.(100, `Synced ${classified.accepted} running workouts from Apple Health.`);
+
+  return {
+    zone2Runs: classified.zone2Runs,
+    norwegianSessions: classified.norwegianSessions,
+    miscRuns: classified.miscRuns,
+    totalWorkoutsFound: classified.accepted,
+    runningWorkoutsFound: classified.accepted,
+    rejectedSessions: classified.rejectedSessions,
+    detectedRestingHR,
+    detectedMaxHR: maxHRDetected ? Math.round(observedMax) : 188,
+    restingHRDetected,
+    maxHRDetected,
+    source: 'healthkit',
+  };
 }
 
 /** "YYYY-MM-DD" for a date N days before today, so demo data never goes stale. */
